@@ -14,7 +14,7 @@
 #include <Eigen/Dense>
 #include <iostream>
 #include "kindr/Core"
-#include "lightweight_filtering/PropertyHandler.hpp"
+//#include "lightweight_filtering/PropertyHandler.hpp"
 
 typedef kindr::RotationQuaternionPD QPD;
 typedef kindr::RotationMatrixPD MPD;
