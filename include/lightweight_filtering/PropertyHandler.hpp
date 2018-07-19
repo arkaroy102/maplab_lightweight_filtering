@@ -8,11 +8,16 @@
 #ifndef LWF_PropertyHandler_HPP_
 #define LWF_PropertyHandler_HPP_
 
-#include <boost/property_tree/ptree.hpp>
-#include <boost/property_tree/info_parser.hpp>
+#include <type_traits>
 #include "lightweight_filtering/common.hpp"
+#include "lightweight_filtering/documentHelpers.h"
 #include <unordered_map>
 #include <unordered_set>
+#include <rapidjson/document.h>
+#include <vector>
+#include <sstream>
+#include <iostream>
+#include <string>
 
 namespace rot = kindr;
 
@@ -21,7 +26,6 @@ namespace LWF{
 template<typename TYPE>
 class Register{
  public:
-  typedef boost::property_tree::ptree ptree;
   Register(){};
   virtual ~Register(){};
   std::map<TYPE*,std::string> registerMap_;
@@ -91,14 +95,22 @@ class Register{
     if(registerMap_.count(&var)==0) std::cout << "Property Handler Error: Cannot remove variable, does not exist!" << std::endl;
     registerMap_.erase(&var);
   }
-  void buildPropertyTree(ptree& pt){
+
+  void readDocument(const rapidjson::Document& doc){
     for(typename std::map<TYPE*,std::string>::iterator it=registerMap_.begin(); it != registerMap_.end(); ++it){
-      pt.put(it->second, *(it->first));
-    }
-  }
-  void readPropertyTree(const ptree& pt){
-    for(typename std::map<TYPE*,std::string>::iterator it=registerMap_.begin(); it != registerMap_.end(); ++it){
-      *(it->first) = pt.get<TYPE>(it->second);
+
+      rapidjson::Value::ConstMemberIterator itr = findValueInDoc(doc, it->second.c_str());
+      if (itr->value.GetType() == 1 || itr->value.GetType() == 2) {
+        *(it->first) = itr->value.GetBool();
+      }
+      if (itr->value.GetType() == 6) {
+        if (itr->value.IsDouble()) {
+          *(it->first) = itr->value.GetDouble();
+        }
+        else if (itr->value.IsInt()) {
+          *(it->first) = itr->value.GetInt();
+        }
+      }
     }
     for(typename std::unordered_set<TYPE*>::iterator it=zeros_.begin(); it != zeros_.end(); ++it){
       **it = static_cast<TYPE>(0);
@@ -108,7 +120,6 @@ class Register{
 
 class PropertyHandler{
  public:
-  typedef boost::property_tree::ptree ptree;
   PropertyHandler(){};
   virtual ~PropertyHandler(){};
   Register<bool> boolRegister_;
@@ -116,82 +127,34 @@ class PropertyHandler{
   Register<double> doubleRegister_;
   Register<std::string> stringRegister_;
   std::unordered_map<std::string,PropertyHandler*> subHandlers_;
-  void buildPropertyTree(ptree& pt){
-    boolRegister_.buildPropertyTree(pt);
-    intRegister_.buildPropertyTree(pt);
-    doubleRegister_.buildPropertyTree(pt);
-    stringRegister_.buildPropertyTree(pt);
+
+  void readDocument(const rapidjson::Document& doc){
+    boolRegister_.readDocument(doc);
+    intRegister_.readDocument(doc);
+    doubleRegister_.readDocument(doc);
+    stringRegister_.readDocument(doc);
     for(typename std::unordered_map<std::string,PropertyHandler*>::iterator it=subHandlers_.begin(); it != subHandlers_.end(); ++it){
-      ptree ptsub;
-      it->second->buildPropertyTree(ptsub);
-      pt.add_child(it->first,ptsub);
-    }
-  }
-  void readPropertyTree(const ptree& pt){
-    boolRegister_.readPropertyTree(pt);
-    intRegister_.readPropertyTree(pt);
-    doubleRegister_.readPropertyTree(pt);
-    stringRegister_.readPropertyTree(pt);
-    for(typename std::unordered_map<std::string,PropertyHandler*>::iterator it=subHandlers_.begin(); it != subHandlers_.end(); ++it){
-      ptree ptsub;
-      ptsub = pt.get_child(it->first);
-      it->second->readPropertyTree(ptsub);
+      rapidjson::Document d;
+      d.CopyFrom(doc.FindMember(it->first.c_str())->value, d.GetAllocator());
+      it->second->readDocument(d);
     }
   }
   void registerSubHandler(std::string str,PropertyHandler& subHandler){
     if(subHandlers_.count(str)!=0) std::cout << "Property Handler Error: subHandler with name " << str << " already exists" << std::endl;
     subHandlers_[str] = &subHandler;
   }
-  void writeToInfo(const std::string &filename){
-    ptree pt;
-    buildPropertyTree(pt);
-    write_info(filename,pt);
-  }
 
-  void readFromPropertyTree(const ptree &propertyTree) {
-    ptree ptDefault;
-    buildPropertyTree(ptDefault);
-    try {
-      readPropertyTree(propertyTree);
-      refreshProperties();
-      for (typename std::unordered_map<std::string, PropertyHandler *>::iterator
-               it = subHandlers_.begin();
-           it != subHandlers_.end(); ++it) {
-        it->second->refreshProperties();
-      }
-    } catch (boost::property_tree::ptree_error &e) {
-      std::cout << "An exception occurred. " << e.what() << std::endl;
-      refreshProperties();
-      for (typename std::unordered_map<std::string, PropertyHandler *>::iterator
-               it = subHandlers_.begin();
-           it != subHandlers_.end(); ++it) {
-        it->second->refreshProperties();
-      }
+  void readFromDocument(const rapidjson::Document& doc) {
+
+    readDocument(doc);
+    refreshProperties();
+    for (typename std::unordered_map<std::string, PropertyHandler *>::iterator
+             it = subHandlers_.begin();
+         it != subHandlers_.end(); ++it) {
+      it->second->refreshProperties();
     }
   }
 
-  void readFromInfo(const std::string &filename){
-    ptree ptDefault;
-    buildPropertyTree(ptDefault);
-    ptree pt;
-    try{
-      read_info(filename,pt);
-      readPropertyTree(pt);
-      refreshProperties();
-      for(typename std::unordered_map<std::string,PropertyHandler*>::iterator it=subHandlers_.begin(); it != subHandlers_.end(); ++it){
-        it->second->refreshProperties();
-      }
-    } catch (boost::property_tree::ptree_error& e){
-      std::cout << "An exception occurred. " << e.what() << std::endl;
-      std::string newFilename = filename + "_new";
-      std::cout << "\033[31mWriting a new info-file to " << newFilename << "\033[0m" << std::endl;
-      write_info(newFilename,ptDefault);
-      refreshProperties();
-      for(typename std::unordered_map<std::string,PropertyHandler*>::iterator it=subHandlers_.begin(); it != subHandlers_.end(); ++it){
-        it->second->refreshProperties();
-      }
-    }
-  }
   virtual void refreshProperties(){};
 };
 
