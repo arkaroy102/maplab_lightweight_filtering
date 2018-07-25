@@ -19,9 +19,9 @@
     return tokens;
   }
   inline rapidjson::Value::ConstMemberIterator findValueInDoc
-      (const rapidjson::Document& doc, std::string val) {
+      (const rapidjson::Document& doc, std::string key) {
 
-    std::vector<std::string> values = splitString(val, '.');
+    std::vector<std::string> values = splitString(key, '.');
     rapidjson::Document d;
     d.CopyFrom(doc, d.GetAllocator());
 
@@ -38,5 +38,9 @@
     }
     rapidjson::Value::ConstMemberIterator v;
     return v;
+  }
+  template<typename T>
+  inline void putValueInDoc(const rapidjson::Document& doc, std::string key,
+      T value) {
   }
 #endif
